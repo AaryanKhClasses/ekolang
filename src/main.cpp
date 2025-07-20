@@ -26,7 +26,7 @@ int main(int argc, char* argv[]) {
     vector<Token> tokens = tokenizer.tokenize();
 
     Parser parser(move(tokens));
-    optional<NodeExit> tree = parser.parse();
+    optional<NodeProgram> tree = parser.parse();
 
     if(!tree.has_value()) {
         cerr << "Failed to parse the input file." << endl;
@@ -37,7 +37,7 @@ int main(int argc, char* argv[]) {
 
     {
         fstream output("../out/output.asm", ios::out);
-        output << generator.generate();
+        output << generator.generateProgram();
         output.close();
     }
 

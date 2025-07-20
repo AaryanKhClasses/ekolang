@@ -7,7 +7,8 @@
 using namespace std;
 
 enum class TokenType {
-    EXIT, NUMBER
+    EXIT, NUMBER, IDENTIFIER, LET, EQUALS,
+    PAR_OPEN, PAR_CLOSE,
 };
 
 struct Token {
@@ -32,9 +33,14 @@ class Tokenizer {
                         tokens.push_back({.type = TokenType::EXIT, .value = buffer});
                         buffer.clear();
                         continue;
+                    } else if(buffer == "let") {
+                        tokens.push_back({.type = TokenType::LET, .value = buffer});
+                        buffer.clear();
+                        continue;
                     } else {
-                        cerr << "Unknown keyword: " << buffer << endl;
-                        exit(EXIT_FAILURE);
+                        tokens.push_back({.type = TokenType::IDENTIFIER, .value = buffer});
+                        buffer.clear();
+                        continue;
                     }
                 } else if(isdigit(peek().value())) {
                     buffer.push_back(consume());
@@ -42,11 +48,23 @@ class Tokenizer {
                     tokens.push_back({.type = TokenType::NUMBER, .value = buffer});
                     buffer.clear();
                     continue;
+                } else if(peek().value() == '(') {
+                    tokens.push_back({.type = TokenType::PAR_OPEN, .value = "("});
+                    consume();
+                    continue;
+                } else if(peek().value() == ')') {
+                    tokens.push_back({.type = TokenType::PAR_CLOSE, .value = ")"});
+                    consume();
+                    continue;
+                } else if(peek().value() == '=') {
+                    tokens.push_back({.type = TokenType::EQUALS, .value = "="});
+                    consume();
+                    continue;
                 } else if(isspace(peek().value())) {
                     consume();
                     continue;
                 } else {
-                    cerr << "Unknown character: " << peek().value() << endl;
+                    cerr << "Invalid Syntax: Unknown character `" << peek().value() << "`" << endl;
                     exit(EXIT_FAILURE);
                 }
             }
@@ -58,9 +76,9 @@ class Tokenizer {
         const string _src;
         size_t _index = 0;
 
-        [[nodiscard]] inline optional<char> peek(int num = 1) const {
-            if(_index + num > _src.length()) return {};
-            else return _src.at(_index);
+        [[nodiscard]] inline optional<char> peek(int num = 0) const {
+            if(_index + num >= _src.length()) return {};
+            else return _src.at(_index + num);
         }
 
         inline char consume() { return _src.at(_index++); }
