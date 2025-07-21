@@ -12,60 +12,62 @@ class Generator {
         inline explicit Generator(NodeProgram program): _program(move(program)) { }
         bool _hasExplicitExit = false;
 
-        void generateExpression(const NodeExpression& expression) {
+        void generateExpression(const NodeExpression* expression) {
             struct ExpressionVisitor {
                 Generator* generator;
 
-                void operator()(const NodeExpressionNumber& number) const {
-                    generator->_out << "    mov rax, " << number.number.value << "\n"; // move the number to rax
+                void operator()(const NodeExpressionNumber* number) const {
+                    generator->_out << "    mov rax, " << number->number.value << "\n"; // move the number to rax
                     generator->push("rax"); // push the value onto the stack
                 }
 
-                void operator()(const NodeExpressionIdentifier& identifier) const {
-                    if(!generator->_vars.contains(identifier.identifier.value)) {
-                        cerr << "Invalid Syntax: Identifier `" << identifier.identifier.value << "` does not exist!" << endl;
+                void operator()(const NodeExpressionIdentifier* identifier) const {
+                    if(!generator->_vars.contains(identifier->identifier.value)) {
+                        cerr << "Invalid Syntax: Identifier `" << identifier->identifier.value << "` does not exist!" << endl;
                         exit(EXIT_FAILURE);
                     }
-                    const auto& var = generator->_vars.at(identifier.identifier.value);
+                    const auto& var = generator->_vars.at(identifier->identifier.value);
                     stringstream offset;
                     offset << "QWORD [rsp + " << (generator->_stackSize - var.stackPos - 1) * 8 << "]";
                     generator->push(offset.str()); // push the value onto the stack
                 }
+
+                void operator()(const BinaryExpression* binaryExpression) const { }
             };
 
             ExpressionVisitor visitor{.generator = this};
-            visit(visitor, expression.var);
+            visit(visitor, expression->var);
         }
         
-        void generateStatement(const NodeStatement& statement) {
+        void generateStatement(const NodeStatement* statement) {
             struct StatementVisitor {
                 Generator* generator;
-                void operator()(const NodeExit& exit) const {
-                    generator->generateExpression(exit.exp);
+                void operator()(const NodeExit* exit) const {
+                    generator->generateExpression(exit->exp);
                     generator->_out << "    mov rax, 60\n"; // syscall number for exit
                     generator->pop("rdi"); // pop the top of the stack into rdi
                     generator->_out << "    syscall\n"; // make the syscall
                     generator->_hasExplicitExit = true;
                 }
 
-                void operator()(const NodeLet& let) const {
-                    if(generator->_vars.contains(let.identifier.value)) {
-                        cerr << "Identifier `" << let.identifier.value << "` already exists!" << endl;
+                void operator()(const NodeLet* let) const {
+                    if(generator->_vars.contains(let->identifier.value)) {
+                        cerr << "Identifier `" << let->identifier.value << "` already exists!" << endl;
                         exit(EXIT_FAILURE);
                     }
-                    generator->_vars.insert({let.identifier.value, Var {.stackPos = generator->_stackSize} });
-                    generator->generateExpression(let.value);
+                    generator->_vars.insert({let->identifier.value, Var {.stackPos = generator->_stackSize} });
+                    generator->generateExpression(let->value);
                 }
             };
 
             StatementVisitor visitor{.generator = this};
-            visit(visitor, statement.var);
+            visit(visitor, statement->var);
         }
 
         [[nodiscard]] string generateProgram() {
             _out << "global _start\n_start:\n"; // initiatlize the sstream
 
-            for(const NodeStatement& statement : _program.statements) generateStatement(statement);
+            for(const NodeStatement* statement : _program.statements) generateStatement(statement);
             if (!_hasExplicitExit) {
                 _out << "    mov rax, 60\n"; // syscall number for exit
                 _out << "    mov rdi, 0\n"; // move the exit value of 0 to rdi

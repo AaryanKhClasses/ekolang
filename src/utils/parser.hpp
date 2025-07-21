@@ -4,38 +4,51 @@
 #include <vector>
 #include <optional>
 #include <variant>
+#include "allocator.hpp"
 #include "tokenizer.hpp"
 
 using namespace std;
 
 struct NodeExpressionNumber { Token number; };
 struct NodeExpressionIdentifier { Token identifier; };
-struct NodeExpression { variant<NodeExpressionNumber, NodeExpressionIdentifier> var; };
+struct NodeExpression;
 
-struct NodeExit { NodeExpression exp; };
-struct NodeLet { Token identifier; NodeExpression value; };
-struct NodeStatement { variant<NodeExit, NodeLet> var; };
-struct NodeProgram { vector<NodeStatement> statements; };
+struct BinaryExpressionAdd { NodeExpression* left; NodeExpression* right; };
+struct BinaryExpression { BinaryExpressionAdd* add; };
+struct NodeExpression { variant<NodeExpressionNumber*, NodeExpressionIdentifier*, BinaryExpression*> var; };
+
+struct NodeExit { NodeExpression* exp; };
+struct NodeLet { Token identifier; NodeExpression* value; };
+struct NodeStatement { variant<NodeExit*, NodeLet*> var; };
+struct NodeProgram { vector<NodeStatement*> statements; };
 
 class Parser {
     public:
-        inline explicit Parser(const vector<Token>& tokens): _tokens(move(tokens)) { }
+        inline explicit Parser(const vector<Token>& tokens): _tokens(move(tokens)), _allocator(1024*1024*4) { }
 
-        optional<NodeExpression> parseExp() {
+        optional<NodeExpression*> parseExp() {
             if(peek().has_value() && peek().value().type == TokenType::NUMBER) {
-                return NodeExpression{.var = NodeExpressionNumber{.number = consume()}};
+                auto numberNode = _allocator.allocate<NodeExpressionNumber>();
+                numberNode->number = consume();
+                auto expressionNode = _allocator.allocate<NodeExpression>();
+                expressionNode->var = numberNode;
+                return expressionNode;
             } else if(peek().has_value() && peek().value().type == TokenType::IDENTIFIER) {
-                return NodeExpression{.var = NodeExpressionIdentifier{.identifier = consume()}};
+                auto identifierNode = _allocator.allocate<NodeExpressionIdentifier>();
+                identifierNode->identifier = consume();
+                auto expressionNode = _allocator.allocate<NodeExpression>();
+                expressionNode->var = identifierNode;
+                return expressionNode;
             } else return {};
         }
 
-        optional<NodeStatement> parseStatement() {
+        optional<NodeStatement*> parseStatement() {
             if(peek().value().type == TokenType::EXIT) {
                 if(peek(1).has_value() && peek(1).value().type == TokenType::PAR_OPEN) {
                     consume(); consume();
-                    NodeExit exitStatement;
+                    auto exitStatement = _allocator.allocate<NodeExit>();
                     if(auto nodeExp = parseExp()) {
-                        exitStatement = NodeExit{.exp = nodeExp.value()};
+                        exitStatement->exp = nodeExp.value();
                     } else {
                         cerr << "Failed to parse exit expression." << endl;
                         exit(EXIT_FAILURE);
@@ -46,7 +59,9 @@ class Parser {
                         cerr << "Invalid Syntax: Expected `)`." << endl;
                         exit(EXIT_FAILURE);
                     }
-                    return NodeStatement{.var = exitStatement};
+                    auto statementNode = _allocator.allocate<NodeStatement>();
+                    statementNode->var = exitStatement;
+                    return statementNode;
                 } else {
                     cerr << "Invalid Syntax: Expected `(`." << endl;
                     exit(EXIT_FAILURE);
@@ -55,15 +70,18 @@ class Parser {
                 if(peek(1).has_value() && peek(1).value().type == TokenType::IDENTIFIER) {
                     if(peek(2).has_value() && peek(2).value().type == TokenType::EQUALS) {
                         consume(); // consume 'let'
-                        NodeLet letStatement = NodeLet{.identifier = consume()}; // consume identifier
+                        auto letNode = _allocator.allocate<NodeLet>();
+                        letNode->identifier = consume(); // consume identifier
                         consume(); // consume '='
                         if(auto nodeExp = parseExp()) {
-                            letStatement.value = nodeExp.value();
-                            return NodeStatement{.var = letStatement};
+                            letNode->value = nodeExp.value();
                         } else {
                             cerr << "Failed to parse let value expression." << endl;
                             exit(EXIT_FAILURE);
                         }
+                        auto statementNode = _allocator.allocate<NodeStatement>();
+                        statementNode->var = letNode;
+                        return statementNode;
                     } else {
                         cerr << "Invalid Syntax: Expected `=` after identifier." << endl;
                         exit(EXIT_FAILURE);
@@ -94,6 +112,7 @@ class Parser {
     private:
         const vector<Token> _tokens;
         size_t _index = 0;
+        Allocator _allocator;
 
         [[nodiscard]] inline optional<Token> peek(int num = 0) const {
             if(_index + num >= _tokens.size()) return {};
