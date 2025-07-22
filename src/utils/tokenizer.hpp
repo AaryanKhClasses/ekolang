@@ -7,7 +7,7 @@
 using namespace std;
 
 enum class TokenType {
-    EXIT, NUMBER, IDENTIFIER, LET, EQUALS,
+    EXIT, NUMBER, IDENTIFIER, LET, EQUALS, PLUS,
     PAR_OPEN, PAR_CLOSE,
 };
 
@@ -58,6 +58,10 @@ class Tokenizer {
                     continue;
                 } else if(peek().value() == '=') {
                     tokens.push_back({.type = TokenType::EQUALS, .value = "="});
+                    consume();
+                    continue;
+                } else if(peek().value() == '+') {
+                    tokens.push_back({.type = TokenType::PLUS, .value = "+"});
                     consume();
                     continue;
                 } else if(isspace(peek().value())) {

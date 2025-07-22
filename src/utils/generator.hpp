@@ -12,16 +12,16 @@ class Generator {
         inline explicit Generator(NodeProgram program): _program(move(program)) { }
         bool _hasExplicitExit = false;
 
-        void generateExpression(const NodeExpression* expression) {
-            struct ExpressionVisitor {
+        void generateTerm(const NodeTerm* term) {
+            struct TermVisitor {
                 Generator* generator;
 
-                void operator()(const NodeExpressionNumber* number) const {
+                void operator()(const NodeTermNumber* number) const {
                     generator->_out << "    mov rax, " << number->number.value << "\n"; // move the number to rax
                     generator->push("rax"); // push the value onto the stack
                 }
 
-                void operator()(const NodeExpressionIdentifier* identifier) const {
+                void operator()(const NodeTermIdentifier* identifier) const {
                     if(!generator->_vars.contains(identifier->identifier.value)) {
                         cerr << "Invalid Syntax: Identifier `" << identifier->identifier.value << "` does not exist!" << endl;
                         exit(EXIT_FAILURE);
@@ -31,8 +31,28 @@ class Generator {
                     offset << "QWORD [rsp + " << (generator->_stackSize - var.stackPos - 1) * 8 << "]";
                     generator->push(offset.str()); // push the value onto the stack
                 }
+            };
 
-                void operator()(const BinaryExpression* binaryExpression) const { }
+            TermVisitor visitor{.generator = this};
+            visit(visitor, term->var);
+        }
+
+        void generateExpression(const NodeExpression* expression) {
+            struct ExpressionVisitor {
+                Generator* generator;
+
+                void operator()(const NodeTerm* term) const {
+                    generator->generateTerm(term);
+                }
+
+                void operator()(const BinaryExpression* binaryExpression) const {
+                    generator->generateExpression(binaryExpression->add->left);
+                    generator->generateExpression(binaryExpression->add->right);
+                    generator->pop("rax"); // pop the right operand into rax
+                    generator->pop("rbx"); // pop the left operand into rbx
+                    generator->_out << "    add rax, rbx\n"; // add the two operands
+                    generator->push("rax"); // push the result onto the stack
+                }
             };
 
             ExpressionVisitor visitor{.generator = this};

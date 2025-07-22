@@ -1,3 +1,5 @@
 let x = 5
-let y = x
-exit(x)
+let y = 7
+let z = 9
+let sum = x + y + z
+exit(sum)

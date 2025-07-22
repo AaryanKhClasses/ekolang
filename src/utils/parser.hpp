@@ -9,13 +9,15 @@
 
 using namespace std;
 
-struct NodeExpressionNumber { Token number; };
-struct NodeExpressionIdentifier { Token identifier; };
 struct NodeExpression;
+
+struct NodeTermNumber { Token number; };
+struct NodeTermIdentifier { Token identifier; };
+struct NodeTerm { variant<NodeTermNumber*, NodeTermIdentifier*> var; };
 
 struct BinaryExpressionAdd { NodeExpression* left; NodeExpression* right; };
 struct BinaryExpression { BinaryExpressionAdd* add; };
-struct NodeExpression { variant<NodeExpressionNumber*, NodeExpressionIdentifier*, BinaryExpression*> var; };
+struct NodeExpression { variant<NodeTerm*, BinaryExpression*> var; };
 
 struct NodeExit { NodeExpression* exp; };
 struct NodeLet { Token identifier; NodeExpression* value; };
@@ -26,20 +28,50 @@ class Parser {
     public:
         inline explicit Parser(const vector<Token>& tokens): _tokens(move(tokens)), _allocator(1024*1024*4) { }
 
+        optional<NodeTerm*> parseTerm() {
+            if(auto number = tryConsume(TokenType::NUMBER)) {
+                auto numberTerm = _allocator.allocate<NodeTermNumber>();
+                numberTerm->number = number.value();
+                auto term = _allocator.allocate<NodeTerm>();
+                term->var = numberTerm;
+                return term;
+            } else if(auto identifier = tryConsume(TokenType::IDENTIFIER)) {
+                auto identifierTerm = _allocator.allocate<NodeTermIdentifier>();
+                identifierTerm->identifier = identifier.value();
+                auto term = _allocator.allocate<NodeTerm>();
+                term->var = identifierTerm;
+                return term;
+            } else {
+                return {};
+            }
+        }
+
         optional<NodeExpression*> parseExp() {
-            if(peek().has_value() && peek().value().type == TokenType::NUMBER) {
-                auto numberNode = _allocator.allocate<NodeExpressionNumber>();
-                numberNode->number = consume();
-                auto expressionNode = _allocator.allocate<NodeExpression>();
-                expressionNode->var = numberNode;
-                return expressionNode;
-            } else if(peek().has_value() && peek().value().type == TokenType::IDENTIFIER) {
-                auto identifierNode = _allocator.allocate<NodeExpressionIdentifier>();
-                identifierNode->identifier = consume();
-                auto expressionNode = _allocator.allocate<NodeExpression>();
-                expressionNode->var = identifierNode;
-                return expressionNode;
-            } else return {};
+            if(auto term = parseTerm()) {
+                if(tryConsume(TokenType::PLUS).has_value()) {
+                    auto binaryExp = _allocator.allocate<BinaryExpression>();
+                    auto addExpression = _allocator.allocate<BinaryExpressionAdd>();
+                    auto leftExpression = _allocator.allocate<NodeExpression>();
+                    leftExpression->var = term.value();
+                    addExpression->left = leftExpression;
+                    if(auto right = parseExp()) {
+                        addExpression->right = right.value();
+                        binaryExp->add = addExpression;
+                        auto expressionNode = _allocator.allocate<NodeExpression>();
+                        expressionNode->var = binaryExp;
+                        return expressionNode;
+                    } else {
+                        cerr << "Failed to parse right expression after `+`." << endl;
+                        exit(EXIT_FAILURE);
+                    }
+                } else {
+                    auto expressionNode = _allocator.allocate<NodeExpression>();
+                    expressionNode->var = term.value();
+                    return expressionNode;
+                }
+            } else {
+                return {};
+            }
         }
 
         optional<NodeStatement*> parseStatement() {
@@ -53,12 +85,7 @@ class Parser {
                         cerr << "Failed to parse exit expression." << endl;
                         exit(EXIT_FAILURE);
                     }
-
-                    if(peek().has_value() && peek().value().type == TokenType::PAR_CLOSE) consume();
-                    else {
-                        cerr << "Invalid Syntax: Expected `)`." << endl;
-                        exit(EXIT_FAILURE);
-                    }
+                    tryConsume(TokenType::PAR_CLOSE, "Expected `)` after exit expression.");
                     auto statementNode = _allocator.allocate<NodeStatement>();
                     statementNode->var = exitStatement;
                     return statementNode;
@@ -120,4 +147,17 @@ class Parser {
         }
 
         inline Token consume() { return _tokens.at(_index++); }
+
+        inline Token tryConsume(TokenType type, string error) {
+            if(peek().has_value() && peek().value().type == type) return consume();
+            else {
+                cerr << error << endl;
+                exit(EXIT_FAILURE);
+            }
+        }
+
+        inline optional<Token> tryConsume(TokenType type) {
+            if(peek().has_value() && peek().value().type == type) return consume();
+            else return {};
+        }
 };
