@@ -1,5 +1,5 @@
-let x = 5
-let y = 7
-let z = 9
-let sum = x + y + z
+let x = 10
+let y = 2
+let z = 3
+let sum = (x - y) * z / y
 exit(sum)

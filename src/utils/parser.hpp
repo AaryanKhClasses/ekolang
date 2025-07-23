@@ -13,10 +13,14 @@ struct NodeExpression;
 
 struct NodeTermNumber { Token number; };
 struct NodeTermIdentifier { Token identifier; };
-struct NodeTerm { variant<NodeTermNumber*, NodeTermIdentifier*> var; };
+struct NodeTermParentheses { NodeExpression* expression; };
+struct NodeTerm { variant<NodeTermNumber*, NodeTermIdentifier*, NodeTermParentheses*> var; };
 
 struct BinaryExpressionAdd { NodeExpression* left; NodeExpression* right; };
-struct BinaryExpression { BinaryExpressionAdd* add; };
+struct BinaryExpressionSubtract { NodeExpression* left; NodeExpression* right; };
+struct BinaryExpressionMultiply { NodeExpression* left; NodeExpression* right; };
+struct BinaryExpressionDivide { NodeExpression* left; NodeExpression* right; };
+struct BinaryExpression { variant<BinaryExpressionAdd*, BinaryExpressionSubtract*, BinaryExpressionMultiply*, BinaryExpressionDivide*> var; };
 struct NodeExpression { variant<NodeTerm*, BinaryExpression*> var; };
 
 struct NodeExit { NodeExpression* exp; };
@@ -41,37 +45,76 @@ class Parser {
                 auto term = _allocator.allocate<NodeTerm>();
                 term->var = identifierTerm;
                 return term;
+            } else if(auto parOpen = tryConsume(TokenType::PAR_OPEN)) {
+                auto expression = parseExp();
+                if(!expression.has_value()) {
+                    cerr << "Failed to parse expression inside parentheses." << endl;
+                    exit(EXIT_FAILURE);
+                }
+                tryConsume(TokenType::PAR_CLOSE, "Invalid Syntax: Expected `)` after expression.");
+                auto parenthesesTerm = _allocator.allocate<NodeTermParentheses>();
+                parenthesesTerm->expression = expression.value();
+                auto term = _allocator.allocate<NodeTerm>();
+                term->var = parenthesesTerm;
+                return term;
             } else {
                 return {};
             }
         }
 
-        optional<NodeExpression*> parseExp() {
-            if(auto term = parseTerm()) {
-                if(tryConsume(TokenType::PLUS).has_value()) {
-                    auto binaryExp = _allocator.allocate<BinaryExpression>();
-                    auto addExpression = _allocator.allocate<BinaryExpressionAdd>();
-                    auto leftExpression = _allocator.allocate<NodeExpression>();
-                    leftExpression->var = term.value();
-                    addExpression->left = leftExpression;
-                    if(auto right = parseExp()) {
-                        addExpression->right = right.value();
-                        binaryExp->add = addExpression;
-                        auto expressionNode = _allocator.allocate<NodeExpression>();
-                        expressionNode->var = binaryExp;
-                        return expressionNode;
-                    } else {
-                        cerr << "Failed to parse right expression after `+`." << endl;
-                        exit(EXIT_FAILURE);
-                    }
-                } else {
-                    auto expressionNode = _allocator.allocate<NodeExpression>();
-                    expressionNode->var = term.value();
-                    return expressionNode;
+        optional<NodeExpression*> parseExp(int minPrecedence = 0) {
+            optional<NodeTerm*> leftTerm = parseTerm();
+            if(!leftTerm.has_value()) return {};
+
+            auto leftExpression = _allocator.allocate<NodeExpression>();
+            leftExpression->var = leftTerm.value();
+
+            while(true) {
+                optional<Token> current = peek();
+                optional<int> precedence;
+                if(current.has_value()) {
+                    precedence = binaryPrecedence(current->type);
+                    if(!precedence.has_value() || precedence < minPrecedence) break;
+                } else break;
+
+                Token op = consume(); // consume the operator token
+                int nextPrecedence = precedence.value() + 1;
+                auto rightTerm = parseExp(nextPrecedence);
+                if(!rightTerm.has_value()) {
+                    cerr << "Failed to parse right term after operator." << endl;
+                    exit(EXIT_FAILURE);
                 }
-            } else {
-                return {};
+
+                auto expression = _allocator.allocate<BinaryExpression>();
+                auto newLeftExpression = _allocator.allocate<NodeExpression>();
+                if(op.type == TokenType::PLUS) {
+                    auto addExpression = _allocator.allocate<BinaryExpressionAdd>();
+                    newLeftExpression->var = leftExpression->var;
+                    addExpression->left = newLeftExpression;
+                    addExpression->right = rightTerm.value();
+                    expression->var = addExpression;
+                } else if(op.type == TokenType::MINUS) {
+                    auto subtractExpression = _allocator.allocate<BinaryExpressionSubtract>();
+                    newLeftExpression->var = leftExpression->var;
+                    subtractExpression->left = newLeftExpression;
+                    subtractExpression->right = rightTerm.value();
+                    expression->var = subtractExpression;
+                } else if(op.type == TokenType::TIMES) {
+                    auto multiplyExpression = _allocator.allocate<BinaryExpressionMultiply>();
+                    newLeftExpression->var = leftExpression->var;
+                    multiplyExpression->left = newLeftExpression;
+                    multiplyExpression->right = rightTerm.value();
+                    expression->var = multiplyExpression;
+                } else if(op.type == TokenType::DIVIDE) {
+                    auto divideExpression = _allocator.allocate<BinaryExpressionDivide>();
+                    newLeftExpression->var = leftExpression->var;
+                    divideExpression->left = newLeftExpression;
+                    divideExpression->right = rightTerm.value();
+                    expression->var = divideExpression;
+                }
+                leftExpression->var = expression;
             }
+            return leftExpression;
         }
 
         optional<NodeStatement*> parseStatement() {
@@ -85,7 +128,7 @@ class Parser {
                         cerr << "Failed to parse exit expression." << endl;
                         exit(EXIT_FAILURE);
                     }
-                    tryConsume(TokenType::PAR_CLOSE, "Expected `)` after exit expression.");
+                    tryConsume(TokenType::PAR_CLOSE, "Invalid Syntax: Expected `)` after exit expression.");
                     auto statementNode = _allocator.allocate<NodeStatement>();
                     statementNode->var = exitStatement;
                     return statementNode;

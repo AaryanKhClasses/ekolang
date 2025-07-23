@@ -7,9 +7,22 @@
 using namespace std;
 
 enum class TokenType {
-    EXIT, NUMBER, IDENTIFIER, LET, EQUALS, PLUS,
+    EXIT, NUMBER, IDENTIFIER, LET, EQUALS, PLUS, TIMES, MINUS, DIVIDE,
     PAR_OPEN, PAR_CLOSE,
 };
+
+optional<int> binaryPrecedence(TokenType type) {
+    switch(type) {
+        case TokenType::PLUS:
+        case TokenType::MINUS:
+            return 0;
+        case TokenType::TIMES:
+        case TokenType::DIVIDE:
+            return 1;
+        default:
+            return {};
+    }
+}
 
 struct Token {
     TokenType type;
@@ -62,6 +75,18 @@ class Tokenizer {
                     continue;
                 } else if(peek().value() == '+') {
                     tokens.push_back({.type = TokenType::PLUS, .value = "+"});
+                    consume();
+                    continue;
+                } else if(peek().value() == '-') {
+                    tokens.push_back({.type = TokenType::MINUS, .value = "-"});
+                    consume();
+                    continue;
+                } else if(peek().value() == '*') {
+                    tokens.push_back({.type = TokenType::TIMES, .value = "*"});
+                    consume();
+                    continue;
+                } else if(peek().value() == '/') {
+                    tokens.push_back({.type = TokenType::DIVIDE, .value = "/"});
                     consume();
                     continue;
                 } else if(isspace(peek().value())) {

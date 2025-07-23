@@ -31,10 +31,60 @@ class Generator {
                     offset << "QWORD [rsp + " << (generator->_stackSize - var.stackPos - 1) * 8 << "]";
                     generator->push(offset.str()); // push the value onto the stack
                 }
+
+                void operator()(const NodeTermParentheses* parentheses) const {
+                    generator->generateExpression(parentheses->expression);
+                }
             };
 
             TermVisitor visitor{.generator = this};
             visit(visitor, term->var);
+        }
+
+        void generateBinaryExpression(const BinaryExpression* binaryExpression) {
+            struct BinaryExpressionVisitor {
+                Generator* generator;
+
+                void operator()(const BinaryExpressionAdd* add) const {
+                    generator->generateExpression(add->left);
+                    generator->generateExpression(add->right);
+                    generator->pop("rax"); // pop the right operand into rax
+                    generator->pop("rbx"); // pop the left operand into rbx
+                    generator->_out << "    add rax, rbx\n"; // add the two operands
+                    generator->push("rax"); // push the result onto the stack
+                }
+
+                void operator()(const BinaryExpressionSubtract* subtract) const {
+                    generator->generateExpression(subtract->left);
+                    generator->generateExpression(subtract->right);
+                    generator->pop("rax"); // pop the right operand into rax
+                    generator->pop("rbx"); // pop the left operand into rbx
+                    generator->_out << "    sub rbx, rax\n"; // subtract the two operands
+                    generator->push("rbx"); // push the result onto the stack
+                }
+
+                void operator()(const BinaryExpressionMultiply* multiply) const {
+                    generator->generateExpression(multiply->left);
+                    generator->generateExpression(multiply->right);
+                    generator->pop("rax"); // pop the right operand into rax
+                    generator->pop("rbx"); // pop the left operand into rbx
+                    generator->_out << "    mul rbx\n"; // multiply the two operands
+                    generator->push("rax"); // push the result onto the stack
+                }
+
+                void operator()(const BinaryExpressionDivide* divide) const {
+                    generator->generateExpression(divide->left);
+                    generator->generateExpression(divide->right);
+                    generator->pop("rbx"); // pop the right operand (divisor) into rbx
+                    generator->pop("rax"); // pop the left operand (dividend) into rax
+                    generator->_out << "    xor rdx, rdx\n"; // zero RDX for division
+                    generator->_out << "    div rbx\n"; // divide rax by rbx
+                    generator->push("rax"); // push the result onto the stack
+                }
+            };
+
+            BinaryExpressionVisitor visitor{.generator = this};
+            visit(visitor, binaryExpression->var);
         }
 
         void generateExpression(const NodeExpression* expression) {
@@ -46,12 +96,7 @@ class Generator {
                 }
 
                 void operator()(const BinaryExpression* binaryExpression) const {
-                    generator->generateExpression(binaryExpression->add->left);
-                    generator->generateExpression(binaryExpression->add->right);
-                    generator->pop("rax"); // pop the right operand into rax
-                    generator->pop("rbx"); // pop the left operand into rbx
-                    generator->_out << "    add rax, rbx\n"; // add the two operands
-                    generator->push("rax"); // push the result onto the stack
+                    generator->generateBinaryExpression(binaryExpression);
                 }
             };
 
