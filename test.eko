@@ -1,5 +1,8 @@
 let x = 10
-let y = 2
-let z = 3
-let sum = (x - y) * z / y
-exit(sum)
+let y = 5
+let z = 2
+let sum = x / z - y
+if(sum) {
+    exit(sum)
+}
+exit(5)

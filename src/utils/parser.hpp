@@ -10,6 +10,7 @@
 using namespace std;
 
 struct NodeExpression;
+struct NodeStatement;
 
 struct NodeTermNumber { Token number; };
 struct NodeTermIdentifier { Token identifier; };
@@ -25,7 +26,9 @@ struct NodeExpression { variant<NodeTerm*, BinaryExpression*> var; };
 
 struct NodeExit { NodeExpression* exp; };
 struct NodeLet { Token identifier; NodeExpression* value; };
-struct NodeStatement { variant<NodeExit*, NodeLet*> var; };
+struct NodeScope { vector<NodeStatement*> statements; };
+struct NodeIf { NodeExpression* condition; NodeScope* scope; };
+struct NodeStatement { variant<NodeExit*, NodeLet*, NodeScope*, NodeIf*> var; };
 struct NodeProgram { vector<NodeStatement*> statements; };
 
 class Parser {
@@ -117,6 +120,18 @@ class Parser {
             return leftExpression;
         }
 
+        optional<NodeScope*> parseScope() {
+            if(!tryConsume(TokenType::CUR_OPEN).has_value()) return {};
+            NodeScope* scopeNode = _allocator.allocate<NodeScope>();
+            while (true) {
+                if (peek().has_value() && peek().value().type == TokenType::CUR_CLOSE) break;
+                if (auto statement = parseStatement()) scopeNode->statements.push_back(statement.value());
+                else break;
+            }
+            tryConsume(TokenType::CUR_CLOSE, "Invalid Syntax: Expected `}` to close scope.");
+            return scopeNode;
+        }
+
         optional<NodeStatement*> parseStatement() {
             if(peek().value().type == TokenType::EXIT) {
                 if(peek(1).has_value() && peek(1).value().type == TokenType::PAR_OPEN) {
@@ -158,6 +173,32 @@ class Parser {
                     }
                 } else {
                     cerr << "Invalid Syntax: Expected identifier after `let`." << endl;
+                    exit(EXIT_FAILURE);
+                }
+            } else if(auto _if = tryConsume(TokenType::IF)) {
+                tryConsume(TokenType::PAR_OPEN, "Invalid Syntax: Expected `(` after `if`.");
+                auto ifStatement = _allocator.allocate<NodeIf>();
+                if(auto condition = parseExp()) ifStatement->condition = condition.value();
+                else {
+                    cerr << "Failed to parse if condition." << endl;
+                    exit(EXIT_FAILURE);
+                }
+                tryConsume(TokenType::PAR_CLOSE, "Invalid Syntax: Expected `)` after if condition.");
+                if(auto scopeNode = parseScope()) ifStatement->scope = scopeNode.value();
+                else {
+                    cerr << "Failed to parse if scope." << endl;
+                    exit(EXIT_FAILURE);
+                }
+                auto statementNode = _allocator.allocate<NodeStatement>();
+                statementNode->var = ifStatement;
+                return statementNode;
+            } else if(peek().has_value() && peek().value().type == TokenType::CUR_OPEN) {
+                if(auto scopeNode = parseScope()) {
+                    auto statementNode = _allocator.allocate<NodeStatement>();
+                    statementNode->var = scopeNode.value();
+                    return statementNode;
+                } else {
+                    cerr << "Failed to parse scope." << endl;
                     exit(EXIT_FAILURE);
                 }
             } else {

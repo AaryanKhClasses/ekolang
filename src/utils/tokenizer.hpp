@@ -7,8 +7,9 @@
 using namespace std;
 
 enum class TokenType {
-    EXIT, NUMBER, IDENTIFIER, LET, EQUALS, PLUS, TIMES, MINUS, DIVIDE,
-    PAR_OPEN, PAR_CLOSE,
+    EXIT, NUMBER, IDENTIFIER, LET, IF,
+    EQUALS, PLUS, TIMES, MINUS, DIVIDE,
+    PAR_OPEN, PAR_CLOSE, CUR_OPEN, CUR_CLOSE
 };
 
 optional<int> binaryPrecedence(TokenType type) {
@@ -50,6 +51,10 @@ class Tokenizer {
                         tokens.push_back({.type = TokenType::LET, .value = buffer});
                         buffer.clear();
                         continue;
+                    } else if(buffer == "if") {
+                        tokens.push_back({.type = TokenType::IF, .value = buffer});
+                        buffer.clear();
+                        continue;
                     } else {
                         tokens.push_back({.type = TokenType::IDENTIFIER, .value = buffer});
                         buffer.clear();
@@ -87,6 +92,14 @@ class Tokenizer {
                     continue;
                 } else if(peek().value() == '/') {
                     tokens.push_back({.type = TokenType::DIVIDE, .value = "/"});
+                    consume();
+                    continue;
+                } else if(peek().value() == '{') {
+                    tokens.push_back({.type = TokenType::CUR_OPEN, .value = "{"});
+                    consume();
+                    continue;
+                } else if(peek().value() == '}') {
+                    tokens.push_back({.type = TokenType::CUR_CLOSE, .value = "}"});
                     consume();
                     continue;
                 } else if(isspace(peek().value())) {

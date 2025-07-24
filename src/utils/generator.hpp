@@ -2,7 +2,8 @@
 
 #include <iostream>
 #include <sstream>
-#include <unordered_map>
+#include <vector>
+#include <algorithm>
 #include "parser.hpp"
 
 using namespace std;
@@ -22,13 +23,15 @@ class Generator {
                 }
 
                 void operator()(const NodeTermIdentifier* identifier) const {
-                    if(!generator->_vars.contains(identifier->identifier.value)) {
+                    auto it = find_if(generator->_vars.cbegin(), generator->_vars.cend(), [&](const Var& var) {
+                        return var.name == identifier->identifier.value;
+                    });
+                    if(it == generator->_vars.cend()) {
                         cerr << "Invalid Syntax: Identifier `" << identifier->identifier.value << "` does not exist!" << endl;
                         exit(EXIT_FAILURE);
                     }
-                    const auto& var = generator->_vars.at(identifier->identifier.value);
                     stringstream offset;
-                    offset << "QWORD [rsp + " << (generator->_stackSize - var.stackPos - 1) * 8 << "]";
+                    offset << "QWORD [rsp + " << (generator->_stackSize - (*it).stackPos - 1) * 8 << "]";
                     generator->push(offset.str()); // push the value onto the stack
                 }
 
@@ -103,6 +106,12 @@ class Generator {
             ExpressionVisitor visitor{.generator = this};
             visit(visitor, expression->var);
         }
+
+        void generateScope(const NodeScope* scope) {
+            beginScope();
+            for(const NodeStatement* statement : scope->statements) generateStatement(statement);
+            endScope();
+        }
         
         void generateStatement(const NodeStatement* statement) {
             struct StatementVisitor {
@@ -116,12 +125,29 @@ class Generator {
                 }
 
                 void operator()(const NodeLet* let) const {
-                    if(generator->_vars.contains(let->identifier.value)) {
+                    auto it = find_if(generator->_vars.cbegin(), generator->_vars.cend(), [&](const Var& var) {
+                        return var.name == let->identifier.value;
+                    });
+                    if(it != generator->_vars.cend()) {
                         cerr << "Identifier `" << let->identifier.value << "` already exists!" << endl;
                         exit(EXIT_FAILURE);
                     }
-                    generator->_vars.insert({let->identifier.value, Var {.stackPos = generator->_stackSize} });
+                    generator->_vars.push_back({.name = let->identifier.value, .stackPos = generator->_stackSize});
                     generator->generateExpression(let->value);
+                }
+
+                void operator()(const NodeScope* scope) const {
+                    generator->generateScope(scope);
+                }
+
+                void operator()(const NodeIf* _if) const {
+                    string label = generator->createLabel();
+                    generator->generateExpression(_if->condition);
+                    generator->pop("rax"); // pop the condition result into rax
+                    generator->_out << "    cmp rax, 0\n"; // compare rax
+                    generator->_out << "    je " << label << "\n"; // jump to label
+                    generator->generateScope(_if->scope); // generate the scope if condition is true
+                    generator->_out << "\n" << label << ":\n"; // label for the end of the if statement
                 }
             };
 
@@ -145,8 +171,9 @@ class Generator {
         const NodeProgram _program;
         stringstream _out;
         size_t _stackSize = 0;
-        struct Var { size_t stackPos; };
-        unordered_map<string, Var> _vars {};
+        struct Var { string name; size_t stackPos; };
+        vector<Var> _vars {};
+        vector<size_t> _scopes {};
 
         void push(const string& reg) {
             _out << "    push " << reg << "\n"; // push the register onto the stack
@@ -156,5 +183,22 @@ class Generator {
         void pop(const string& reg) {
             _out << "    pop " << reg << "\n"; // pop the top of the stack into the register
             _stackSize--;
+        }
+
+        void beginScope() {
+            _scopes.push_back(_vars.size());
+        }
+
+        void endScope() {
+            size_t count = _vars.size() - _scopes.back();
+            _out << "    add rsp, " << count * 8 << "\n";
+            _stackSize -= count;
+            _vars.erase(_vars.begin() + _scopes.back(), _vars.end());
+            _scopes.pop_back();
+        }
+
+        string createLabel() {
+            static size_t labelCount = 0;
+            return "label_" + to_string(labelCount++);
         }
 };
