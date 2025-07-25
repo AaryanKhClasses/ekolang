@@ -138,24 +138,24 @@ class Parser {
 
         optional<NodeStatement*> parseStatement() {
             if(peek().value().type == TokenType::EXIT) {
-                    Token exitToken = consume(); // consume 'exit'
-                    if(peek().has_value() && peek().value().type == TokenType::PAR_OPEN) {
-                        Token parOpenToken = consume(); // consume '('
-                        auto exitStatement = _allocator.allocate<NodeExit>();
-                        if(auto nodeExp = parseExp()) {
-                            exitStatement->exp = nodeExp.value();
-                        } else {
-                            cerr << "Failed to parse exit expression at line " << exitToken.line << "." << endl;
-                            exit(EXIT_FAILURE);
-                        }
-                        tryConsume(TokenType::PAR_CLOSE, "Invalid Syntax: Expected `)` after exit expression at line " + to_string(exitToken.line));
-                        auto statementNode = _allocator.allocate<NodeStatement>();
-                        statementNode->var = exitStatement;
-                        return statementNode;
+                Token exitToken = consume(); // consume 'exit'
+                if(peek().has_value() && peek().value().type == TokenType::PAR_OPEN) {
+                    Token parOpenToken = consume(); // consume '('
+                    auto exitStatement = _allocator.allocate<NodeExit>();
+                    if(auto nodeExp = parseExp()) {
+                        exitStatement->exp = nodeExp.value();
                     } else {
-                        cerr << "Invalid Syntax: Expected `(` after `exit` at line " << exitToken.line << "." << endl;
+                        cerr << "Failed to parse exit expression at line " << exitToken.line << "." << endl;
                         exit(EXIT_FAILURE);
                     }
+                    tryConsume(TokenType::PAR_CLOSE, "Invalid Syntax: Expected `)` after exit expression at line " + to_string(exitToken.line));
+                    auto statementNode = _allocator.allocate<NodeStatement>();
+                    statementNode->var = exitStatement;
+                    return statementNode;
+                } else {
+                    cerr << "Invalid Syntax: Expected `(` after `exit` at line " << exitToken.line << "." << endl;
+                    exit(EXIT_FAILURE);
+                }
             } else if(peek().has_value() && peek().value().type == TokenType::LET) {
                 Token letToken = peek().value();
                 if(peek(1).has_value() && peek(1).value().type == TokenType::IDENTIFIER) {
@@ -196,6 +196,9 @@ class Parser {
                         cerr << "Failed to parse assignment expression at line " << assignmentNode->identifier.line << "." << endl;
                         exit(EXIT_FAILURE);
                     }
+                } else {
+                    cerr << "Invalid Syntax: Unexpected token `" << peek().value().value << "` at line " << peek().value().line << "." << endl;
+                    exit(EXIT_FAILURE);
                 }
             } else if(auto _if = tryConsume(TokenType::IF)) {
                 tryConsume(TokenType::PAR_OPEN, "Invalid Syntax: Expected `(` after `if` at line " + to_string(_if->line) + ".");

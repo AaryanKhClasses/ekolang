@@ -176,7 +176,7 @@ class Generator {
         }
 
         [[nodiscard]] string generateProgram() {
-            _out << "global _start\n_start:\n"; // initiatlize the sstream
+            _out << "global _start\n_start:\n"; // initialize the sstream
 
             for(const NodeStatement* statement : _program.statements) generateStatement(statement);
             if (!_hasExplicitExit) {

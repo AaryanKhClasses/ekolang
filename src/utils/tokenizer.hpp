@@ -3,6 +3,7 @@
 #include <iostream>
 #include <vector>
 #include <optional>
+#include <unordered_map>
 
 using namespace std;
 
@@ -40,39 +41,47 @@ class Tokenizer {
             string buffer;
             int lineCount = 0;
 
+            static const unordered_map<string, TokenType> keywords = {
+                { "exit", TokenType::EXIT },
+                { "let", TokenType::LET },
+                { "if", TokenType::IF },
+                { "else", TokenType::ELSE },
+            };
+
+            static const unordered_map<string, TokenType> operators = {
+                { "=", TokenType::EQUALS },
+                { "+", TokenType::PLUS },
+                { "-", TokenType::MINUS },
+                { "*", TokenType::TIMES },
+                { "/", TokenType::DIVIDE },
+                { "(", TokenType::PAR_OPEN },
+                { ")", TokenType::PAR_CLOSE },
+                { "{", TokenType::CUR_OPEN },
+                { "}", TokenType::CUR_CLOSE }
+            };
+
             while(peek().has_value()) {
+                // If alphabetic character
                 if(isalpha(peek().value())) {
                     buffer.push_back(consume());
                     while(peek().has_value() && isalnum(peek().value())) buffer.push_back(consume());
 
-                    if(buffer == "exit") {
-                        tokens.push_back({.type = TokenType::EXIT, .value = buffer, .line = lineCount});
-                        buffer.clear();
-                        continue;
-                    } else if(buffer == "let") {
-                        tokens.push_back({.type = TokenType::LET, .value = buffer, .line = lineCount});
-                        buffer.clear();
-                        continue;
-                    } else if(buffer == "if") {
-                        tokens.push_back({.type = TokenType::IF, .value = buffer, .line = lineCount});
-                        buffer.clear();
-                        continue;
-                    } else if(buffer == "else") {
-                        tokens.push_back({.type = TokenType::ELSE, .value = buffer, .line = lineCount});
-                        buffer.clear();
-                        continue;
-                    } else {
-                        tokens.push_back({.type = TokenType::IDENTIFIER, .value = buffer, .line = lineCount});
-                        buffer.clear();
-                        continue;
-                    }
-                } else if(isdigit(peek().value())) {
+                    auto it = keywords.find(buffer);
+                    if(it != keywords.end()) tokens.push_back({.type = it->second, .value = buffer, .line = lineCount});
+                    else tokens.push_back({.type = TokenType::IDENTIFIER, .value = buffer, .line = lineCount});
+                    buffer.clear();
+                    continue;
+                }
+                // If digit
+                else if(isdigit(peek().value())) {
                     buffer.push_back(consume());
                     while(peek().has_value() && isdigit(peek().value())) buffer.push_back(consume());
                     tokens.push_back({.type = TokenType::NUMBER, .value = buffer, .line = lineCount});
                     buffer.clear();
                     continue;
-                } else if(peek().value() == '/' && peek(1).has_value() && peek(1).value() == '/') {
+                }
+                // If comment
+                else if(peek().value() == '/' && peek(1).has_value() && peek(1).value() == '/') {
                     consume(); consume();
                     while(peek().has_value() && peek().value() != '\n') consume();
                     continue;
@@ -86,52 +95,26 @@ class Tokenizer {
                     lineCount++;
                     consume(); consume();
                     continue;
-                } else if(peek().value() == '(') {
-                    tokens.push_back({.type = TokenType::PAR_OPEN, .value = "(", .line = lineCount});
-                    consume();
-                    continue;
-                } else if(peek().value() == ')') {
-                    tokens.push_back({.type = TokenType::PAR_CLOSE, .value = ")", .line = lineCount});
-                    consume();
-                    continue;
-                } else if(peek().value() == '=') {
-                    tokens.push_back({.type = TokenType::EQUALS, .value = "=", .line = lineCount});
-                    consume();
-                    continue;
-                } else if(peek().value() == '+') {
-                    tokens.push_back({.type = TokenType::PLUS, .value = "+", .line = lineCount});
-                    consume();
-                    continue;
-                } else if(peek().value() == '-') {
-                    tokens.push_back({.type = TokenType::MINUS, .value = "-", .line = lineCount});
-                    consume();
-                    continue;
-                } else if(peek().value() == '*') {
-                    tokens.push_back({.type = TokenType::TIMES, .value = "*", .line = lineCount});
-                    consume();
-                    continue;
-                } else if(peek().value() == '/') {
-                    tokens.push_back({.type = TokenType::DIVIDE, .value = "/", .line = lineCount});
-                    consume();
-                    continue;
-                } else if(peek().value() == '{') {
-                    tokens.push_back({.type = TokenType::CUR_OPEN, .value = "{", .line = lineCount});
-                    consume();
-                    continue;
-                } else if(peek().value() == '}') {
-                    tokens.push_back({.type = TokenType::CUR_CLOSE, .value = "}", .line = lineCount});
-                    consume();
-                    continue;
-                } else if(peek().value() == '\n') {
+                } 
+                // If newline or space
+                else if(peek().value() == '\n') {
                     lineCount++;
                     consume();
                     continue;
                 } else if(isspace(peek().value())) {
                     consume();
                     continue;
-                } else {
-                    cerr << "Invalid Syntax: Unexpected character `" << peek().value() << "` at line " << lineCount << "." << endl;
-                    exit(EXIT_FAILURE);
+                }
+                // If special character
+                else {
+                    auto it = operators.find(string(1, peek().value()));
+                    if(it != operators.end()) {
+                        tokens.push_back({.type = it->second, .value = string(1, consume()), .line = lineCount});
+                        continue;
+                    } else {
+                        cerr << "Invalid Syntax: Unexpected character `" << peek().value() << "` at line " << lineCount << "." << endl;
+                        exit(EXIT_FAILURE);
+                    }
                 }
             }
             _index = 0;
