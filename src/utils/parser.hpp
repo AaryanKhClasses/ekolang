@@ -26,9 +26,11 @@ struct NodeExpression { variant<NodeTerm*, BinaryExpression*> var; };
 
 struct NodeExit { NodeExpression* exp; };
 struct NodeLet { Token identifier; NodeExpression* value; };
+struct NodeAssignment { Token identifier; NodeExpression* value; };
 struct NodeScope { vector<NodeStatement*> statements; };
 struct NodeIf { NodeExpression* condition; NodeScope* scope; };
-struct NodeStatement { variant<NodeExit*, NodeLet*, NodeScope*, NodeIf*> var; };
+struct NodeElse { NodeScope* scope; };
+struct NodeStatement { variant<NodeExit*, NodeLet*, NodeScope*, NodeIf*, NodeElse*, NodeAssignment*> var; };
 struct NodeProgram { vector<NodeStatement*> statements; };
 
 class Parser {
@@ -51,10 +53,10 @@ class Parser {
             } else if(auto parOpen = tryConsume(TokenType::PAR_OPEN)) {
                 auto expression = parseExp();
                 if(!expression.has_value()) {
-                    cerr << "Failed to parse expression inside parentheses." << endl;
+                    cerr << "Failed to parse expression inside parentheses at line " << parOpen->line << "." << endl;
                     exit(EXIT_FAILURE);
                 }
-                tryConsume(TokenType::PAR_CLOSE, "Invalid Syntax: Expected `)` after expression.");
+                tryConsume(TokenType::PAR_CLOSE, "Invalid Syntax: Expected `)` after expression at line " + to_string(parOpen->line));
                 auto parenthesesTerm = _allocator.allocate<NodeTermParentheses>();
                 parenthesesTerm->expression = expression.value();
                 auto term = _allocator.allocate<NodeTerm>();
@@ -84,7 +86,7 @@ class Parser {
                 int nextPrecedence = precedence.value() + 1;
                 auto rightTerm = parseExp(nextPrecedence);
                 if(!rightTerm.has_value()) {
-                    cerr << "Failed to parse right term after operator." << endl;
+                    cerr << "Failed to parse right term after operator at line " << op.line << "." << endl;
                     exit(EXIT_FAILURE);
                 }
 
@@ -121,38 +123,43 @@ class Parser {
         }
 
         optional<NodeScope*> parseScope() {
-            if(!tryConsume(TokenType::CUR_OPEN).has_value()) return {};
+            auto curOpenTokenOpt = tryConsume(TokenType::CUR_OPEN);
+            if(!curOpenTokenOpt.has_value()) return {};
+            Token curOpenToken = curOpenTokenOpt.value();
             NodeScope* scopeNode = _allocator.allocate<NodeScope>();
             while (true) {
                 if (peek().has_value() && peek().value().type == TokenType::CUR_CLOSE) break;
                 if (auto statement = parseStatement()) scopeNode->statements.push_back(statement.value());
                 else break;
             }
-            tryConsume(TokenType::CUR_CLOSE, "Invalid Syntax: Expected `}` to close scope.");
+            tryConsume(TokenType::CUR_CLOSE, "Invalid Syntax: Expected `}` to close scope at line " + to_string(curOpenToken.line));
             return scopeNode;
         }
 
         optional<NodeStatement*> parseStatement() {
             if(peek().value().type == TokenType::EXIT) {
-                if(peek(1).has_value() && peek(1).value().type == TokenType::PAR_OPEN) {
-                    consume(); consume();
-                    auto exitStatement = _allocator.allocate<NodeExit>();
-                    if(auto nodeExp = parseExp()) {
-                        exitStatement->exp = nodeExp.value();
+                    Token exitToken = consume(); // consume 'exit'
+                    if(peek().has_value() && peek().value().type == TokenType::PAR_OPEN) {
+                        Token parOpenToken = consume(); // consume '('
+                        auto exitStatement = _allocator.allocate<NodeExit>();
+                        if(auto nodeExp = parseExp()) {
+                            exitStatement->exp = nodeExp.value();
+                        } else {
+                            cerr << "Failed to parse exit expression at line " << exitToken.line << "." << endl;
+                            exit(EXIT_FAILURE);
+                        }
+                        tryConsume(TokenType::PAR_CLOSE, "Invalid Syntax: Expected `)` after exit expression at line " + to_string(exitToken.line));
+                        auto statementNode = _allocator.allocate<NodeStatement>();
+                        statementNode->var = exitStatement;
+                        return statementNode;
                     } else {
-                        cerr << "Failed to parse exit expression." << endl;
+                        cerr << "Invalid Syntax: Expected `(` after `exit` at line " << exitToken.line << "." << endl;
                         exit(EXIT_FAILURE);
                     }
-                    tryConsume(TokenType::PAR_CLOSE, "Invalid Syntax: Expected `)` after exit expression.");
-                    auto statementNode = _allocator.allocate<NodeStatement>();
-                    statementNode->var = exitStatement;
-                    return statementNode;
-                } else {
-                    cerr << "Invalid Syntax: Expected `(`." << endl;
-                    exit(EXIT_FAILURE);
-                }
             } else if(peek().has_value() && peek().value().type == TokenType::LET) {
+                Token letToken = peek().value();
                 if(peek(1).has_value() && peek(1).value().type == TokenType::IDENTIFIER) {
+                    Token identifierToken = peek(1).value();
                     if(peek(2).has_value() && peek(2).value().type == TokenType::EQUALS) {
                         consume(); // consume 'let'
                         auto letNode = _allocator.allocate<NodeLet>();
@@ -161,48 +168,83 @@ class Parser {
                         if(auto nodeExp = parseExp()) {
                             letNode->value = nodeExp.value();
                         } else {
-                            cerr << "Failed to parse let value expression." << endl;
+                            cerr << "Failed to parse let value expression at line " << letToken.line << "." << endl;
                             exit(EXIT_FAILURE);
                         }
                         auto statementNode = _allocator.allocate<NodeStatement>();
                         statementNode->var = letNode;
                         return statementNode;
                     } else {
-                        cerr << "Invalid Syntax: Expected `=` after identifier." << endl;
+                        cerr << "Invalid Syntax: Expected `=` after identifier at line " << identifierToken.line << "." << endl;
                         exit(EXIT_FAILURE);
                     }
                 } else {
-                    cerr << "Invalid Syntax: Expected identifier after `let`." << endl;
+                    cerr << "Invalid Syntax: Expected identifier after `let` at line " << letToken.line << "." << endl;
                     exit(EXIT_FAILURE);
                 }
+            } else if(peek().has_value() && peek().value().type == TokenType::IDENTIFIER) {
+                if(peek(1).has_value() && peek(1).value().type == TokenType::EQUALS) {
+                    auto assignmentNode = _allocator.allocate<NodeAssignment>();
+                    assignmentNode->identifier = consume(); // consume identifier
+                    consume(); // consume '='
+                    if(auto expression = parseExp()) {
+                        assignmentNode->value = expression.value();
+                        auto statementNode = _allocator.allocate<NodeStatement>();
+                        statementNode->var = assignmentNode;
+                        return statementNode;
+                    } else {
+                        cerr << "Failed to parse assignment expression at line " << assignmentNode->identifier.line << "." << endl;
+                        exit(EXIT_FAILURE);
+                    }
+                }
             } else if(auto _if = tryConsume(TokenType::IF)) {
-                tryConsume(TokenType::PAR_OPEN, "Invalid Syntax: Expected `(` after `if`.");
+                tryConsume(TokenType::PAR_OPEN, "Invalid Syntax: Expected `(` after `if` at line " + to_string(_if->line) + ".");
                 auto ifStatement = _allocator.allocate<NodeIf>();
                 if(auto condition = parseExp()) ifStatement->condition = condition.value();
                 else {
-                    cerr << "Failed to parse if condition." << endl;
+                    cerr << "Failed to parse if condition at line " << _if->line << "." << endl;
                     exit(EXIT_FAILURE);
                 }
-                tryConsume(TokenType::PAR_CLOSE, "Invalid Syntax: Expected `)` after if condition.");
+                tryConsume(TokenType::PAR_CLOSE, "Invalid Syntax: Expected `)` after if condition at line " + to_string(_if->line) + ".");
                 if(auto scopeNode = parseScope()) ifStatement->scope = scopeNode.value();
                 else {
-                    cerr << "Failed to parse if scope." << endl;
+                    cerr << "Failed to parse if scope at line " << _if->line << "." << endl;
                     exit(EXIT_FAILURE);
                 }
                 auto statementNode = _allocator.allocate<NodeStatement>();
                 statementNode->var = ifStatement;
                 return statementNode;
+            } else if(auto _else = tryConsume(TokenType::ELSE)) {
+                if(peek().has_value() && peek().value().type == TokenType::CUR_OPEN) {
+                    auto elseNode = _allocator.allocate<NodeElse>();
+                    if(auto scopeNode = parseScope()) {
+                        elseNode->scope = scopeNode.value();
+                        auto statementNode = _allocator.allocate<NodeStatement>();
+                        statementNode->var = elseNode;
+                        return statementNode;
+                    } else {
+                        cerr << "Failed to parse else scope at line " << _else->line << "." << endl;
+                        exit(EXIT_FAILURE);
+                    }
+                } else {
+                    cerr << "Invalid Syntax: Expected `{` after `else` at line " << _else->line << "." << endl;
+                    exit(EXIT_FAILURE);
+                }
             } else if(peek().has_value() && peek().value().type == TokenType::CUR_OPEN) {
                 if(auto scopeNode = parseScope()) {
                     auto statementNode = _allocator.allocate<NodeStatement>();
                     statementNode->var = scopeNode.value();
                     return statementNode;
                 } else {
-                    cerr << "Failed to parse scope." << endl;
+                    cerr << "Failed to parse scope at line " << peek().value().line << "." << endl;
                     exit(EXIT_FAILURE);
                 }
             } else {
-                cerr << "Invalid Syntax: Expected `exit` or `let`." << endl;
+                if(peek().has_value()) {
+                    cerr << "Invalid Syntax: Unexpected token `" << peek().value().value << "` at line " << peek().value().line << "." << endl;
+                } else {
+                    cerr << "Invalid Syntax: Unexpected end of input at line " << _tokens.back().line << "." << endl;
+                }
                 exit(EXIT_FAILURE);
             }
         }
@@ -213,7 +255,7 @@ class Parser {
                 if(auto nodeStatement = parseStatement()) {
                     program.statements.push_back(nodeStatement.value());
                 } else {
-                    cerr << "Failed to parse statement." << endl;
+                    cerr << "Failed to parse statement at line " << _tokens.back().line << "." << endl;
                     exit(EXIT_FAILURE);
                 }
             }
@@ -234,10 +276,8 @@ class Parser {
 
         inline Token tryConsume(TokenType type, string error) {
             if(peek().has_value() && peek().value().type == type) return consume();
-            else {
-                cerr << error << endl;
-                exit(EXIT_FAILURE);
-            }
+            cerr << error << endl;
+            exit(EXIT_FAILURE);
         }
 
         inline optional<Token> tryConsume(TokenType type) {

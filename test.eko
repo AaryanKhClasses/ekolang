@@ -1,8 +1,18 @@
+/*
+This is a test file for the ekolang compile-based language
+Source Code: https://github.com/AaryanKhClasses/ekolang
+*/
+
+// declare variables
 let x = 10
-let y = 5
+let y = 3
 let z = 2
+
+// work with the "sum"
 let sum = x / z - y
 if(sum) {
-    exit(sum)
+    x = x + 1
+    exit(x)
+} else {
+    exit(x)
 }
-exit(5)

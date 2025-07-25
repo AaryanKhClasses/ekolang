@@ -27,7 +27,7 @@ class Generator {
                         return var.name == identifier->identifier.value;
                     });
                     if(it == generator->_vars.cend()) {
-                        cerr << "Invalid Syntax: Identifier `" << identifier->identifier.value << "` does not exist!" << endl;
+                        cerr << "Invalid Syntax: Identifier `" << identifier->identifier.value << "` does not exist at line " << identifier->identifier.line << "." << endl;
                         exit(EXIT_FAILURE);
                     }
                     stringstream offset;
@@ -129,11 +129,24 @@ class Generator {
                         return var.name == let->identifier.value;
                     });
                     if(it != generator->_vars.cend()) {
-                        cerr << "Identifier `" << let->identifier.value << "` already exists!" << endl;
+                        cerr << "Identifier `" << let->identifier.value << "` already exists at line " << let->identifier.line << "." << endl;
                         exit(EXIT_FAILURE);
                     }
                     generator->_vars.push_back({.name = let->identifier.value, .stackPos = generator->_stackSize});
                     generator->generateExpression(let->value);
+                }
+
+                void operator()(const NodeAssignment* assignment) const {
+                    auto it = find_if(generator->_vars.cbegin(), generator->_vars.cend(), [&](const Var& var) {
+                        return var.name == assignment->identifier.value;
+                    });
+                    if(it == generator->_vars.cend()) {
+                        cerr << "Identifier `" << assignment->identifier.value << "` does not exist at line " << assignment->identifier.line << "!" << endl;
+                        exit(EXIT_FAILURE);
+                    }
+                    generator->generateExpression(assignment->value);
+                    generator->pop("rax"); // pop the value into rax
+                    generator->_out << "    mov QWORD [rsp + " << (generator->_stackSize - it->stackPos - 1) * 8 << "], rax\n"; // store the value in the variable
                 }
 
                 void operator()(const NodeScope* scope) const {
@@ -148,6 +161,13 @@ class Generator {
                     generator->_out << "    je " << label << "\n"; // jump to label
                     generator->generateScope(_if->scope); // generate the scope if condition is true
                     generator->_out << "\n" << label << ":\n"; // label for the end of the if statement
+                }
+
+                void operator()(const NodeElse* _else) const {
+                    string label = generator->createLabel();
+                    generator->_out << "    jmp " << label << "\n"; // jump to the end of the else
+                    generator->_out << "\n" << label << ":\n"; // label for the end of the else statement
+                    generator->generateScope(_else->scope); // generate the scope for else
                 }
             };
 
